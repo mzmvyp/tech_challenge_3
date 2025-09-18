@@ -60,20 +60,31 @@ def iniciar_api():
             sys.executable, "-m", "uvicorn", 
             "src.api_predicao:app", 
             "--host", "0.0.0.0", 
-            "--port", "8000"
+            "--port", "8000",
+            "--reload"
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         # Aguardar API inicializar
-        time.sleep(3)
+        print("⏳ Aguardando API inicializar...")
+        time.sleep(5)
         
-        # Testar se está funcionando
-        response = requests.get("http://localhost:8000/", timeout=5)
-        if response.status_code == 200:
-            print("✅ API iniciada: http://localhost:8000")
-            return True
-        else:
-            print("❌ Erro ao iniciar API")
-            return False
+        # Testar se está funcionando com múltiplas tentativas
+        max_tentativas = 10
+        for tentativa in range(max_tentativas):
+            try:
+                response = requests.get("http://localhost:8000/", timeout=3)
+                if response.status_code == 200:
+                    print("✅ API iniciada: http://localhost:8000")
+                    print("📚 Documentação: http://localhost:8000/docs")
+                    return True
+                else:
+                    print(f"⏳ Tentativa {tentativa + 1}/{max_tentativas} - Status: {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                print(f"⏳ Tentativa {tentativa + 1}/{max_tentativas} - Aguardando...")
+                time.sleep(2)
+        
+        print("❌ API não conseguiu inicializar após 10 tentativas")
+        return False
             
     except Exception as e:
         print(f"❌ Erro ao iniciar API: {e}")
