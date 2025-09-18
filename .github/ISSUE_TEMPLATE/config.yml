@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Community Support
+    url: https://github.com/mzmvyp/tech_challenge_3/discussions
+    about: Please ask and answer questions here.
+  - name: Email Support
+    url: mailto:seu-email@exemplo.com
+    about: Contact us directly via email for urgent issues.

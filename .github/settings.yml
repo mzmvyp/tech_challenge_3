@@ -1,0 +1,91 @@
+# GitHub repository settings
+# This file is used to configure repository settings
+
+# Repository name
+name: tech_challenge_3
+
+# Description
+description: Sistema inteligente de Machine Learning para análise e previsão da gravidade de acidentes em rodovias federais brasileiras
+
+# Topics
+topics:
+  - machine-learning
+  - python
+  - fastapi
+  - streamlit
+  - prf
+  - accidents
+  - prediction
+  - data-science
+  - brazil
+  - road-safety
+  - tech-challenge
+  - random-forest
+  - data-analysis
+  - visualization
+
+# Homepage URL
+homepage: https://mzmvyp.github.io/tech_challenge_3
+
+# Has issues enabled
+has_issues: true
+
+# Has projects enabled
+has_projects: true
+
+# Has wiki enabled
+has_wiki: true
+
+# Has discussions enabled
+has_discussions: true
+
+# Is template repository
+is_template: false
+
+# Allow auto-merge
+allow_auto_merge: true
+
+# Allow merge commits
+allow_merge_commit: true
+
+# Allow rebase merging
+allow_rebase_merge: true
+
+# Allow squash merging
+allow_squash_merge: true
+
+# Delete head branches when merged
+delete_branch_on_merge: true
+
+# Allow force pushes
+allow_force_pushes: false
+
+# Allow deletions
+allow_deletions: false
+
+# Default branch
+default_branch: main
+
+# Branch protection rules
+branch_protection:
+  - branch: main
+    required_status_checks:
+      strict: true
+      contexts:
+        - "CI/CD Pipeline"
+        - "CodeQL Analysis"
+    enforce_admins: true
+    required_pull_request_reviews:
+      required_approving_review_count: 1
+      dismiss_stale_reviews: true
+      require_code_owner_reviews: true
+    restrictions: null
+
+# Webhooks
+webhooks: []
+
+# Collaborators
+collaborators: []
+
+# Teams
+teams: []

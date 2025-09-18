@@ -1,0 +1,37 @@
+# Global code owners
+* @mzmvyp
+
+# Python files
+*.py @mzmvyp
+
+# Configuration files
+*.yml @mzmvyp
+*.yaml @mzmvyp
+*.json @mzmvyp
+*.toml @mzmvyp
+
+# Documentation
+*.md @mzmvyp
+docs/ @mzmvyp
+
+# Docker files
+Dockerfile @mzmvyp
+docker-compose.yml @mzmvyp
+
+# GitHub workflows
+.github/workflows/ @mzmvyp
+
+# Requirements
+requirements*.txt @mzmvyp
+
+# Jupyter notebooks
+*.ipynb @mzmvyp
+
+# Data files (if any are tracked)
+data/ @mzmvyp
+
+# Source code
+src/ @mzmvyp
+
+# Tests
+tests/ @mzmvyp

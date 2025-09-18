@@ -1,0 +1,2 @@
+# Este arquivo mantém o diretório data/raw no Git
+# Os arquivos CSV grandes são ignorados pelo .gitignore
