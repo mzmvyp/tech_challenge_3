@@ -1,4 +1,4 @@
-# main.py - Sistema de Previsão de Gravidade de Acidentes em Rodovias Federais
+# main.py - Sistema de Alerta Preventivo de Acidentes em Rodovias Federais
 
 import subprocess
 import sys
@@ -37,53 +37,87 @@ def verificar_modelo():
     
     arquivos_modelo = [
         "data/models/modelo_acidentes.pkl",
-        "data/models/scaler_acidentes.pkl",
-        "data/models/feature_info.pkl"
+        "data/models/scaler_acidentes.pkl"
     ]
     
     for arquivo in arquivos_modelo:
         if not Path(arquivo).exists():
             print(f"❌ Modelo não encontrado: {arquivo}")
-            print("📊 Execute: python treinar_modelo.py")
+            print("📊 Execute: python src/train_model_mysql.py")
             return False
     
-    print("✅ Modelo treinado encontrado")
+    print("✅ Modelo de análise de risco encontrado")
     return True
+
+def verificar_api_rodando():
+    """
+    Verifica se a API já está rodando
+    """
+    for port in range(8000, 8011):
+        try:
+            response = requests.get(f"http://localhost:{port}/", timeout=1)
+            if response.status_code == 200:
+                print(f"🔍 API encontrada na porta {port}")
+                return port
+        except requests.exceptions.RequestException as e:
+            print(f"🔍 Porta {port}: {type(e).__name__}")
+            continue
+    print("🔍 Nenhuma API encontrada")
+    return None
 
 def iniciar_api():
     """
     Inicia a API FastAPI
     """
     print("🚀 Iniciando API...")
+    
+    # Primeiro verificar se já está rodando
+    print("🔍 Verificando se API já está rodando...")
+    porta_existente = verificar_api_rodando()
+    if porta_existente:
+        print(f"✅ API já está rodando na porta {porta_existente}")
+        print(f"📚 Documentação: http://localhost:{porta_existente}/docs")
+        return True
+    
     try:
-        subprocess.Popen([
-            sys.executable, "-m", "uvicorn", 
-            "src.api_predicao:app", 
-            "--host", "0.0.0.0", 
-            "--port", "8000",
-            "--reload"
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("🚀 Iniciando nova instância da API...")
+        # Iniciar nova instância da API
+        processo = subprocess.Popen([
+            sys.executable, "src/api_alerta_preventivo.py"
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        # Aguardar API inicializar
+        print(f"✅ Processo iniciado com PID: {processo.pid}")
+        
+        # Aguardar API inicializar com verificações mais frequentes
         print("⏳ Aguardando API inicializar...")
-        time.sleep(5)
+        time.sleep(3)  # Tempo inicial menor
         
-        # Testar se está funcionando com múltiplas tentativas
-        max_tentativas = 10
+        # Testar se está funcionando com verificações mais frequentes
+        max_tentativas = 20
         for tentativa in range(max_tentativas):
-            try:
-                response = requests.get("http://localhost:8000/", timeout=3)
-                if response.status_code == 200:
-                    print("✅ API iniciada: http://localhost:8000")
-                    print("📚 Documentação: http://localhost:8000/docs")
-                    return True
-                else:
-                    print(f"⏳ Tentativa {tentativa + 1}/{max_tentativas} - Status: {response.status_code}")
-            except requests.exceptions.RequestException as e:
-                print(f"⏳ Tentativa {tentativa + 1}/{max_tentativas} - Aguardando...")
-                time.sleep(2)
+            print(f"🔍 Tentativa {tentativa + 1}/{max_tentativas} - Verificando API...")
+            porta_encontrada = verificar_api_rodando()
+            if porta_encontrada:
+                print(f"✅ API iniciada com sucesso: http://localhost:{porta_encontrada}")
+                print(f"📚 Documentação: http://localhost:{porta_encontrada}/docs")
+                return True
+            
+            # Verificar se o processo ainda está rodando
+            if processo.poll() is not None:
+                print(f"❌ Processo da API terminou inesperadamente (código: {processo.returncode})")
+                stdout, stderr = processo.communicate()
+                if stdout:
+                    print(f"STDOUT: {stdout.decode('utf-8', errors='ignore')}")
+                if stderr:
+                    print(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
+                return False
+            
+            print(f"⏳ Aguardando mais 1 segundo...")
+            time.sleep(1)
         
-        print("❌ API não conseguiu inicializar após 10 tentativas")
+        # Se chegou aqui, falhou
+        print("❌ API não conseguiu inicializar após 20 tentativas")
+        processo.terminate()
         return False
             
     except Exception as e:
@@ -96,23 +130,53 @@ def iniciar_dashboard():
     """
     print("📊 Iniciando dashboard...")
     try:
-        subprocess.Popen([
+        # Verificar se dashboard já está rodando
+        try:
+            response = requests.get("http://localhost:8501/", timeout=2)
+            if response.status_code == 200:
+                print("✅ Dashboard já está rodando: http://localhost:8501")
+                return True
+        except:
+            pass
+        
+        # Iniciar novo dashboard
+        processo = subprocess.Popen([
             sys.executable, "-m", "streamlit", "run", 
             "src/dashboard.py", 
-            "--server.port", "8501"
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            "--server.port", "8501",
+            "--server.headless", "true"
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
-        # Aguardar dashboard inicializar
-        time.sleep(5)
+        print(f"✅ Processo dashboard iniciado com PID: {processo.pid}")
         
-        # Testar se está funcionando
-        response = requests.get("http://localhost:8501/", timeout=5)
-        if response.status_code == 200:
-            print("✅ Dashboard iniciado: http://localhost:8501")
-            return True
-        else:
-            print("❌ Erro ao iniciar dashboard")
-            return False
+        # Aguardar dashboard inicializar com verificações
+        print("⏳ Aguardando dashboard inicializar...")
+        time.sleep(3)
+        
+        # Testar se está funcionando com múltiplas tentativas
+        max_tentativas = 10
+        for tentativa in range(max_tentativas):
+            try:
+                response = requests.get("http://localhost:8501/", timeout=3)
+                if response.status_code == 200:
+                    print("✅ Dashboard iniciado: http://localhost:8501")
+                    return True
+            except requests.exceptions.RequestException as e:
+                print(f"🔍 Tentativa {tentativa + 1}/{max_tentativas} - {type(e).__name__}")
+            
+            # Verificar se processo ainda está rodando
+            if processo.poll() is not None:
+                print(f"❌ Processo dashboard terminou (código: {processo.returncode})")
+                stdout, stderr = processo.communicate()
+                if stderr:
+                    print(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
+                return False
+            
+            time.sleep(1)
+        
+        print("❌ Dashboard não conseguiu inicializar")
+        processo.terminate()
+        return False
             
     except Exception as e:
         print(f"❌ Erro ao iniciar dashboard: {e}")
@@ -143,7 +207,7 @@ def main():
     """
     Função principal
     """
-    print("🚨 SISTEMA DE PREVISÃO DE GRAVIDADE DE ACIDENTES")
+    print("🚨 SISTEMA DE ALERTA PREVENTIVO DE ACIDENTES")
     print("="*60)
     
     # Verificar dependências

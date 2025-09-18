@@ -1,42 +1,45 @@
-# 🚨 Sistema de Previsão de Gravidade de Acidentes - PRF
+# 🚨 Sistema de Alerta Preventivo de Acidentes - PRF
 
-Sistema inteligente de Machine Learning para análise e previsão da gravidade de acidentes em rodovias federais brasileiras, utilizando dados reais da Polícia Rodoviária Federal (PRF).
+Sistema inteligente de Machine Learning para **PREVENIR** acidentes em rodovias federais brasileiras, analisando condições de viagem e alertando sobre riscos **ANTES** que aconteçam, utilizando dados reais da Polícia Rodoviária Federal (PRF).
 
 ## 📊 Sobre o Projeto
 
-Este projeto foi desenvolvido para o **Tech Challenge - Fase 3** e implementa um sistema completo de análise preditiva de acidentes rodoviários, incluindo:
+Este projeto foi desenvolvido para o **Tech Challenge - Fase 3** e implementa um sistema completo de **prevenção de acidentes** rodoviários, incluindo:
 
-- **Coleta de dados** reais da PRF (2007-2025)
+- **Coleta de dados** reais da PRF (2007-2024)
 - **Modelo de Machine Learning** treinado com 1.4M+ registros
-- **API REST** para predições em tempo real
+- **API REST** para análise de risco em tempo real
 - **Dashboard interativo** com visualizações avançadas
-- **Sistema de recomendações** baseado em fatores de risco
+- **Sistema de alertas preventivos** baseado em fatores de risco
 
-## 🎯 Funcionalidades
+## 🎯 Funcionalidades Principais
+
+### 🛡️ Sistema de Alerta Preventivo
+- **Análise de Risco**: Calcula probabilidade de acidente para viagens planejadas
+- **Prevenção Inteligente**: Sugere horários e rotas mais seguras
+- **Alertas em Tempo Real**: "⚠️ RISCO ALTO (78%) - Chuvas previstas, horário de pico"
+- **Recomendações Práticas**: "💡 Saia às 16h ou use BR-381"
 
 ### 🤖 Modelo de Machine Learning
 - **Algoritmo**: Random Forest Classifier
 - **Dados**: 1.449.933 registros reais da PRF
-- **Período**: 2007-2025 (19 anos)
+- **Período**: 2007-2024 (18 anos)
 - **Acurácia**: 72.8%
-- **Classes**: 4 níveis de gravidade
-  - Ileso/Sem Vítimas
-  - Feridos Leves
-  - Feridos Graves
-  - Fatal/Óbitos
+- **Objetivo**: PREVENIR acidentes, não prever gravidade
+- **Níveis de Risco**: BAIXO, MÉDIO, ALTO, CRÍTICO
 
 ### 📈 Dashboard Interativo
 - Visualizações em tempo real
-- Filtros por período, estado e gravidade
+- Filtros por período, estado e nível de risco
 - Métricas de performance
 - Análise temporal e geográfica
 - Interface responsiva e intuitiva
 
 ### 🔗 API REST
-- Endpoints para predição de gravidade
+- Endpoints para análise de risco de viagem
 - Validação de dados com Pydantic
 - Documentação automática (Swagger)
-- Sistema de recomendações
+- Sistema de recomendações preventivas
 - Análise de fatores de risco
 
 ## 🚀 Instalação e Uso

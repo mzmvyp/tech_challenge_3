@@ -181,12 +181,17 @@ class PreprocessadorDados:
         # Mapeamento específico para gravidade
         mapa_gravidade = {
             'SEM VÍTIMAS': 0,
+            'SEM VITIMAS': 0,
             'ILESO': 0,
+            'COM FERIDOS LEVES': 1,
             'FERIDOS LEVES': 1,
             'FERIDOS': 1,
             'FERIDO LEVE': 1,
+            'COM FERIDOS GRAVES': 2,
             'FERIDOS GRAVES': 2,
             'FERIDO GRAVE': 2,
+            'COM VÍTIMAS FATAIS': 3,
+            'COM VITIMAS FATAIS': 3,
             'ÓBITOS': 3,
             'MORTOS': 3,
             'FATAL': 3
@@ -271,9 +276,16 @@ class PreprocessadorDados:
         # Garantindo que todas as features são numéricas
         X = X.select_dtypes(include=[np.number])
         
+        # Convertendo todas as colunas para float64 para evitar problemas de tipo
+        for col in X.columns:
+            X[col] = pd.to_numeric(X[col], errors='coerce')
+        
         # Tratando valores infinitos e NaN
         X = X.replace([np.inf, -np.inf], np.nan)
         X = X.fillna(0)
+        
+        # Garantindo que todos os dados são float64
+        X = X.astype(np.float64)
         
         self.logger.info(f"   Features (X): {X.shape}")
         self.logger.info(f"   Target (y): {y.shape}")

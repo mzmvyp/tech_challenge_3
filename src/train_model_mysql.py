@@ -1,4 +1,4 @@
-# src/train_model.py
+# src/train_model_mysql.py - Treinamento de múltiplos modelos com dados do MySQL
 
 import pandas as pd
 import numpy as np
@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 import logging
 from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
 
 # Sklearn imports
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
@@ -29,15 +31,15 @@ except ImportError:
     print("⚠️ XGBoost não instalado. Use: pip install xgboost")
 
 # Imports locais
-from src.utils.preprocessing import PreprocessadorDados
-from src.data_collector import ColetorDadosPRF
+from database import DatabaseManager
+from utils.preprocessing import PreprocessadorDados
 
 # Configuração
 logging.basicConfig(level=logging.INFO)
 
-class TreinadorModelos:
+class TreinadorModelosMySQL:
     """
-    Classe para treinar e comparar múltiplos modelos de ML
+    Classe para treinar e comparar múltiplos modelos de ML com dados do MySQL
     """
     
     def __init__(self, diretorio_modelos="data/models"):
@@ -46,7 +48,55 @@ class TreinadorModelos:
         self.logger = logging.getLogger(__name__)
         self.resultados = {}
         self.melhor_modelo = None
+        self.db = DatabaseManager()
         
+    def carregar_dados_mysql(self, limit=None):
+        """
+        Carrega dados do banco MySQL
+        
+        Parâmetros:
+        -----------
+        limit : int, optional
+            Limite de registros para carregar
+            
+        Returns:
+        --------
+        pd.DataFrame : DataFrame com os dados
+        """
+        self.logger.info("📊 CARREGANDO DADOS DO MYSQL")
+        self.logger.info("-" * 50)
+        
+        if not self.db.conectar():
+            self.logger.error("❌ Falha ao conectar ao banco de dados")
+            return None
+        
+        try:
+            # Carregando dados
+            df = self.db.buscar_acidentes(limit=limit)
+            
+            if len(df) == 0:
+                self.logger.error("❌ Nenhum dado encontrado no banco")
+                return None
+            
+            self.logger.info(f"✅ {len(df):,} registros carregados do MySQL")
+            self.logger.info(f"📅 Período: {df['data_inversa'].min()} a {df['data_inversa'].max()}")
+            
+            # Verificando distribuição de classes
+            if 'gravidade_numerica' in df.columns:
+                dist_classes = df['gravidade_numerica'].value_counts().sort_index()
+                self.logger.info(f"📊 Distribuição de classes:")
+                for classe, qtd in dist_classes.items():
+                    pct = qtd / len(df) * 100
+                    self.logger.info(f"   Classe {classe}: {qtd:,} ({pct:.1f}%)")
+            
+            self.db.desconectar()
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao carregar dados: {e}")
+            self.db.desconectar()
+            return None
+    
     def definir_modelos(self):
         """
         Define os modelos que serão treinados
@@ -167,6 +217,9 @@ class TreinadorModelos:
                 self.logger.info(f"   Classes: 0=Ileso, 1=Leve, 2=Grave, 3=Fatal")
                 self.logger.info(f"   {cm}")
                 
+                # Salvando estatísticas no banco
+                self.salvar_estatisticas_modelo(nome, acc, prec, rec, f1, len(X_train), modelo.get_params())
+                
             except Exception as e:
                 self.logger.error(f"   ❌ Erro: {e}")
                 self.resultados[nome] = None
@@ -233,7 +286,7 @@ class TreinadorModelos:
         rf = RandomForestClassifier(
             random_state=42,
             class_weight='balanced',
-            n_jobs=-1
+            n_jobs=1  # Usando 1 job para evitar problemas no Windows
         )
         
         # Grid Search com validação cruzada reduzida para acelerar
@@ -242,7 +295,7 @@ class TreinadorModelos:
             param_grid=param_grid,
             cv=3,  # Reduzido para 3-fold para acelerar
             scoring='f1_weighted',
-            n_jobs=-1,
+            n_jobs=1,  # Usando 1 job para evitar problemas no Windows
             verbose=1
         )
         
@@ -283,6 +336,17 @@ class TreinadorModelos:
         # Atualizando melhor modelo
         self.melhor_modelo = melhor_modelo
         
+        # Salvando estatísticas do modelo otimizado
+        self.salvar_estatisticas_modelo(
+            "Random Forest Otimizado", 
+            acc_otimizado, 
+            precision_score(y_test, y_pred_otimizado, average='weighted'),
+            recall_score(y_test, y_pred_otimizado, average='weighted'),
+            f1_otimizado,
+            len(X_train),
+            grid_search.best_params_
+        )
+        
         return melhor_modelo, grid_search.best_params_
     
     def salvar_modelo(self, modelo=None, nome_arquivo=None):
@@ -310,6 +374,30 @@ class TreinadorModelos:
         self.logger.info(f"💾 Modelo principal salvo em: {modelo_principal}")
         
         return caminho_modelo
+    
+    def salvar_estatisticas_modelo(self, nome_modelo, acuracia, precisao, recall, f1_score, total_amostras, parametros):
+        """
+        Salva estatísticas do modelo no banco
+        """
+        if not self.db.conectar():
+            return False
+        
+        try:
+            self.db.salvar_estatisticas_modelo(
+                nome_modelo=nome_modelo,
+                acuracia=acuracia,
+                precisao=precisao,
+                recall=recall,
+                f1_score=f1_score,
+                total_amostras=total_amostras,
+                parametros=parametros
+            )
+            self.db.desconectar()
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao salvar estatísticas: {e}")
+            self.db.desconectar()
+            return False
     
     def avaliar_feature_importance(self, modelo=None, feature_names=None, top_n=20):
         """
@@ -351,35 +439,34 @@ def main():
     Função principal para executar o treinamento
     """
     
-    print("🚨 SISTEMA DE PREVISÃO DE GRAVIDADE DE ACIDENTES - PRF")
+    print("🚨 SISTEMA DE TREINAMENTO DE MODELOS - MYSQL")
     print("="*80)
-    print("🤖 Iniciando treinamento dos modelos...")
+    print("🤖 Iniciando treinamento dos modelos com dados do MySQL...")
     
-    # 1. VERIFICANDO SE EXISTEM DADOS
-    arquivo_dados = Path("data/raw/acidentes_combinados.csv")
+    # 1. CARREGANDO DADOS DO MYSQL
+    treinador = TreinadorModelosMySQL()
     
-    if not arquivo_dados.exists():
-        print("\n❌ Dados não encontrados!")
-        print("🔄 Executando coleta de dados primeiro...")
-        
-        # Coletando dados
-        coletor = ColetorDadosPRF()
-        dados = coletor.coletar_todos_os_anos()
-        
-        if dados is None:
-            print("❌ Falha na coleta de dados. Verifique sua conexão.")
-            return
-    else:
-        print(f"✅ Carregando dados de: {arquivo_dados}")
-        dados = pd.read_csv(arquivo_dados, encoding='utf-8')
+    print("\n📊 Carregando dados do MySQL...")
+    dados = treinador.carregar_dados_mysql(limit=100000)  # Limite para não sobrecarregar
     
-    print(f"📊 Total de registros: {len(dados):,}")
+    if dados is None:
+        print("❌ Falha ao carregar dados do MySQL")
+        print("💡 Execute primeiro: python src/data_collector_mysql.py")
+        return
+    
+    print(f"✅ {len(dados):,} registros carregados")
     
     # 2. PREPROCESSAMENTO
     print("\n🔄 Iniciando preprocessamento...")
     preprocessador = PreprocessadorDados()
     
     X, y = preprocessador.processar_completo(dados)
+    
+    if len(X) == 0:
+        print("❌ Erro no preprocessamento - dados vazios")
+        return
+    
+    print(f"✅ Preprocessamento concluído: {X.shape[0]:,} amostras, {X.shape[1]} features")
     
     # 3. DIVISÃO TREINO/TESTE
     print("\n📊 Dividindo dados em treino e teste...")
@@ -401,8 +488,7 @@ def main():
     print(f"💾 Scaler salvo em: {scaler_path}")
     
     # 5. TREINAMENTO DOS MODELOS
-    print("\n🤖 Iniciando treinamento...")
-    treinador = TreinadorModelos()
+    print("\n🤖 Iniciando treinamento de todos os modelos...")
     
     resultados = treinador.treinar_modelos(
         X_train_scaled, X_test_scaled, y_train, y_test
@@ -450,6 +536,7 @@ def main():
     print(f"   - Modelo: {modelo_path}")
     print(f"   - Scaler: {scaler_path}")
     print(f"   - Preprocessador: data/models/preprocessador.pkl")
+    print(f"   - Estatísticas: Salvas no MySQL")
     
     print(f"\n🔄 Próximo passo: Executar a API")
     print(f"   python src/api_predicao.py")
