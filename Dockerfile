@@ -1,7 +1,7 @@
 # Dockerfile - Sistema de Previsão de Acidentes PRF
 
 # Imagem base com Python
-FROM python:3.10-slim
+FROM python:3.13-slim
 
 # Metadados
 LABEL maintainer="mzmvyp <github.com/mzmvyp>"
