@@ -1,253 +1,269 @@
-# main.py - Sistema de Alerta Preventivo de Acidentes em Rodovias Federais
+"""
+Sistema de Prevenção de Acidentes PRF - Main
+
+Sistema simplificado que usa modelo treinado com dados reais da PRF
+para PREVENIR acidentes, não prever gravidade.
+"""
 
 import subprocess
 import sys
 import time
-import requests
+import os
+import logging
 from pathlib import Path
+import signal
+import socket
 
-def verificar_dependencias():
-    """
-    Verifica se as dependências estão instaladas
-    """
-    print("🔍 Verificando dependências...")
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def verificar_dependencias() -> bool:
+    """Verifica se todas as dependências estão instaladas"""
+    logger.info("🔍 Verificando dependências...")
     
-    dependencias = ['pandas', 'numpy', 'sklearn', 'requests', 'fastapi', 'uvicorn', 'streamlit']
-    faltando = []
+    # Mapeamento de dependências para nomes de módulos
+    dependencias = {
+        'fastapi': 'fastapi',
+        'uvicorn': 'uvicorn', 
+        'streamlit': 'streamlit',
+        'pandas': 'pandas',
+        'numpy': 'numpy',
+        'scikit-learn': 'sklearn',
+        'requests': 'requests',
+        'python-dotenv': 'dotenv',
+        'joblib': 'joblib'
+    }
     
-    for dep in dependencias:
+    dependencias_faltando = []
+    
+    for nome_dep, modulo in dependencias.items():
         try:
-            __import__(dep)
+            __import__(modulo)
+            logger.info(f"✅ {nome_dep}")
         except ImportError:
-            faltando.append(dep)
+            dependencias_faltando.append(nome_dep)
+            logger.error(f"❌ {nome_dep}")
     
-    if faltando:
-        print(f"❌ Dependências faltando: {faltando}")
-        print("📦 Execute: pip install -r requirements.txt")
+    if dependencias_faltando:
+        logger.error(f"Dependências faltando: {', '.join(dependencias_faltando)}")
+        logger.info("Execute: pip install -r requirements.txt")
         return False
     
-    print("✅ Todas as dependências estão instaladas")
+    logger.info("✅ Todas as dependências estão instaladas")
     return True
 
-def verificar_modelo():
-    """
-    Verifica se o modelo está treinado
-    """
-    print("🤖 Verificando modelo...")
-    
-    arquivos_modelo = [
-        "data/models/modelo_acidentes.pkl",
-        "data/models/scaler_acidentes.pkl"
-    ]
-    
-    for arquivo in arquivos_modelo:
-        if not Path(arquivo).exists():
-            print(f"❌ Modelo não encontrado: {arquivo}")
-            print("📊 Execute: python src/train_model_mysql.py")
-            return False
-    
-    print("✅ Modelo de análise de risco encontrado")
-    return True
 
-def verificar_api_rodando():
-    """
-    Verifica se a API já está rodando
-    """
-    for port in range(8000, 8011):
-        try:
-            response = requests.get(f"http://localhost:{port}/", timeout=1)
-            if response.status_code == 200:
-                print(f"🔍 API encontrada na porta {port}")
-                return port
-        except requests.exceptions.RequestException as e:
-            print(f"🔍 Porta {port}: {type(e).__name__}")
-            continue
-    print("🔍 Nenhuma API encontrada")
-    return None
-
-def iniciar_api():
-    """
-    Inicia a API FastAPI
-    """
-    print("🚀 Iniciando API...")
+def verificar_modelo() -> bool:
+    """Verifica se o modelo treinado existe"""
+    logger.info("🤖 Verificando modelo treinado...")
     
-    # Primeiro verificar se já está rodando
-    print("🔍 Verificando se API já está rodando...")
-    porta_existente = verificar_api_rodando()
-    if porta_existente:
-        print(f"✅ API já está rodando na porta {porta_existente}")
-        print(f"📚 Documentação: http://localhost:{porta_existente}/docs")
+    caminho_modelo = Path('data/models/accident_risk_model.pkl')
+    
+    if caminho_modelo.exists():
+        tamanho = caminho_modelo.stat().st_size / 1024 / 1024  # MB
+        logger.info(f"✅ Modelo encontrado: {tamanho:.2f} MB")
         return True
+    else:
+        logger.warning("⚠️ Modelo não encontrado")
+        logger.info("💡 Execute: python src/train_pipeline.py para treinar o modelo")
+        return False
+
+
+def encontrar_porta_livre(porta_inicial: int, max_tentativas: int = 10) -> int:
+    """Encontra uma porta livre"""
+    import socket
+    
+    for i in range(max_tentativas):
+        porta = porta_inicial + i
+        try:
+            # Tentar bind na porta
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(('127.0.0.1', porta))
+                s.listen(1)
+                logger.info(f"✅ Porta {porta} disponível")
+                return porta
+        except (OSError, PermissionError) as e:
+            logger.warning(f"⚠️ Porta {porta} ocupada: {e}")
+            continue
+    
+    # Se não encontrar porta livre, usar uma porta aleatória
+    import random
+    porta_aleatoria = random.randint(8000, 8999)
+    logger.warning(f"⚠️ Usando porta aleatória: {porta_aleatoria}")
+    return porta_aleatoria
+
+
+def iniciar_api() -> subprocess.Popen:
+    """Inicia a API FastAPI"""
+    logger.info("🚀 Iniciando API...")
+    
+    porta = encontrar_porta_livre(8000)
     
     try:
-        print("🚀 Iniciando nova instância da API...")
-        # Iniciar nova instância da API
-        processo = subprocess.Popen([
-            sys.executable, "src/api_alerta_preventivo.py"
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        comando = [
+            sys.executable, '-m', 'uvicorn',
+            'src.api.main:app',
+            '--host', '127.0.0.1',
+            '--port', str(porta),
+            '--reload',
+            '--log-level', 'warning'
+        ]
         
-        print(f"✅ Processo iniciado com PID: {processo.pid}")
+        processo = subprocess.Popen(
+            comando,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
         
-        # Aguardar API inicializar com verificações mais frequentes
-        print("⏳ Aguardando API inicializar...")
-        time.sleep(3)  # Tempo inicial menor
+        # Aguardar inicialização
+        time.sleep(5)
         
-        # Testar se está funcionando com verificações mais frequentes
-        max_tentativas = 20
-        for tentativa in range(max_tentativas):
-            print(f"🔍 Tentativa {tentativa + 1}/{max_tentativas} - Verificando API...")
-            porta_encontrada = verificar_api_rodando()
-            if porta_encontrada:
-                print(f"✅ API iniciada com sucesso: http://localhost:{porta_encontrada}")
-                print(f"📚 Documentação: http://localhost:{porta_encontrada}/docs")
-                return True
-            
-            # Verificar se o processo ainda está rodando
-            if processo.poll() is not None:
-                print(f"❌ Processo da API terminou inesperadamente (código: {processo.returncode})")
-                stdout, stderr = processo.communicate()
-                if stdout:
-                    print(f"STDOUT: {stdout.decode('utf-8', errors='ignore')}")
-                if stderr:
-                    print(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
-                return False
-            
-            print(f"⏳ Aguardando mais 1 segundo...")
-            time.sleep(1)
-        
-        # Se chegou aqui, falhou
-        print("❌ API não conseguiu inicializar após 20 tentativas")
-        processo.terminate()
-        return False
-            
-    except Exception as e:
-        print(f"❌ Erro ao iniciar API: {e}")
-        return False
-
-def iniciar_dashboard():
-    """
-    Inicia o dashboard Streamlit
-    """
-    print("📊 Iniciando dashboard...")
-    try:
-        # Verificar se dashboard já está rodando
-        try:
-            response = requests.get("http://localhost:8501/", timeout=2)
-            if response.status_code == 200:
-                print("✅ Dashboard já está rodando: http://localhost:8501")
-                return True
-        except:
-            pass
-        
-        # Iniciar novo dashboard
-        processo = subprocess.Popen([
-            sys.executable, "-m", "streamlit", "run", 
-            "src/dashboard.py", 
-            "--server.port", "8501",
-            "--server.headless", "true"
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        
-        print(f"✅ Processo dashboard iniciado com PID: {processo.pid}")
-        
-        # Aguardar dashboard inicializar com verificações
-        print("⏳ Aguardando dashboard inicializar...")
-        time.sleep(3)
-        
-        # Testar se está funcionando com múltiplas tentativas
-        max_tentativas = 10
-        for tentativa in range(max_tentativas):
-            try:
-                response = requests.get("http://localhost:8501/", timeout=3)
-                if response.status_code == 200:
-                    print("✅ Dashboard iniciado: http://localhost:8501")
-                    return True
-            except requests.exceptions.RequestException as e:
-                print(f"🔍 Tentativa {tentativa + 1}/{max_tentativas} - {type(e).__name__}")
-            
-            # Verificar se processo ainda está rodando
-            if processo.poll() is not None:
-                print(f"❌ Processo dashboard terminou (código: {processo.returncode})")
-                stdout, stderr = processo.communicate()
-                if stderr:
-                    print(f"STDERR: {stderr.decode('utf-8', errors='ignore')}")
-                return False
-            
-            time.sleep(1)
-        
-        print("❌ Dashboard não conseguiu inicializar")
-        processo.terminate()
-        return False
-            
-    except Exception as e:
-        print(f"❌ Erro ao iniciar dashboard: {e}")
-        return False
-
-def treinar_modelo():
-    """
-    Treina o modelo se necessário
-    """
-    print("🤖 Treinando modelo...")
-    try:
-        result = subprocess.run([
-            sys.executable, "treinar_modelo.py"
-        ], capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print("✅ Modelo treinado com sucesso")
-            return True
+        if processo.poll() is None:
+            logger.info(f"✅ API iniciada na porta {porta}")
+            logger.info(f"📚 Documentação: http://localhost:{porta}/docs")
+            return processo
         else:
-            print(f"❌ Erro no treinamento: {result.stderr}")
-            return False
+            # Capturar erro
+            stdout, stderr = processo.communicate()
+            logger.error(f"❌ Erro ao iniciar API: {stderr}")
+            raise RuntimeError(f"Falha ao iniciar API: {stderr}")
             
     except Exception as e:
-        print(f"❌ Erro ao treinar modelo: {e}")
-        return False
+        logger.error(f"❌ Erro crítico ao iniciar API: {e}")
+        raise
+
+
+def iniciar_dashboard() -> subprocess.Popen:
+    """Inicia o Dashboard Streamlit"""
+    logger.info("📊 Iniciando Dashboard...")
+    
+    porta = encontrar_porta_livre(8501)
+    
+    try:
+        comando = [
+            sys.executable, '-m', 'streamlit', 'run',
+            'src/dashboard/app_expandido.py',
+            '--server.port', str(porta),
+            '--server.address', '127.0.0.1',
+            '--server.headless', 'true',
+            '--browser.gatherUsageStats', 'false',
+            '--logger.level', 'error'
+        ]
+        
+        processo = subprocess.Popen(
+            comando,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Aguardar inicialização
+        time.sleep(7)
+        
+        if processo.poll() is None:
+            logger.info(f"✅ Dashboard iniciado na porta {porta}")
+            logger.info(f"🌐 Interface: http://localhost:{porta}")
+            return processo
+        else:
+            # Capturar erro
+            stdout, stderr = processo.communicate()
+            logger.error(f"❌ Erro ao iniciar Dashboard: {stderr}")
+            raise RuntimeError(f"Falha ao iniciar Dashboard: {stderr}")
+            
+    except Exception as e:
+        logger.error(f"❌ Erro crítico ao iniciar Dashboard: {e}")
+        raise
+
 
 def main():
-    """
-    Função principal
-    """
-    print("🚨 SISTEMA DE ALERTA PREVENTIVO DE ACIDENTES")
-    print("="*60)
+    """Função principal"""
+    logger.info("🛡️ SISTEMA DE PREVENÇÃO DE ACIDENTES PRF")
+    logger.info("=" * 60)
     
-    # Verificar dependências
-    if not verificar_dependencias():
-        return
+    # Configurar handler para Ctrl+C
+    def signal_handler(sig, frame):
+        logger.info("\n🛑 Parando sistema...")
+        sys.exit(0)
     
-    # Verificar modelo
-    if not verificar_modelo():
-        print("\n🔄 Treinando modelo...")
-        if not treinar_modelo():
-            print("❌ Falha no treinamento do modelo")
-            return
+    signal.signal(signal.SIGINT, signal_handler)
     
-    # Iniciar serviços
-    print("\n🚀 Iniciando serviços...")
-    
-    api_ok = iniciar_api()
-    dashboard_ok = iniciar_dashboard()
-    
-    if api_ok and dashboard_ok:
-        print("\n✅ SISTEMA INICIADO COM SUCESSO!")
-        print("="*60)
-        print("🌐 Dashboard: http://localhost:8501")
-        print("🔗 API: http://localhost:8000")
-        print("📚 Documentação: http://localhost:8000/docs")
-        print("\n💡 Pressione Ctrl+C para parar os serviços")
+    try:
+        # 1. Verificar dependências
+        if not verificar_dependencias():
+            logger.error("❌ Dependências não satisfeitas")
+            sys.exit(1)
         
+        # 2. Verificar modelo
+        modelo_ok = verificar_modelo()
+        
+        # 3. Treinar modelo se necessário
+        if not modelo_ok:
+            logger.info("🤖 Treinando modelo com dados sintéticos...")
+            try:
+                subprocess.run([sys.executable, 'src/train_pipeline.py'], check=True)
+                logger.info("✅ Modelo treinado com sucesso")
+                modelo_ok = True
+            except subprocess.CalledProcessError as e:
+                logger.warning(f"⚠️ Erro no treinamento: {e}")
+                logger.info("💡 Sistema funcionará com regras básicas")
+        
+        # 4. Iniciar API
+        processo_api = iniciar_api()
+        
+        # 5. Iniciar Dashboard
+        processo_dashboard = iniciar_dashboard()
+        
+        # 6. Mostrar resumo
+        logger.info("\n" + "=" * 60)
+        logger.info("🎉 SISTEMA INICIADO COM SUCESSO!")
+        logger.info("=" * 60)
+        logger.info(f"🤖 Modelo ML: {'✅ Carregado' if modelo_ok else '⚠️ Usando regras'}")
+        logger.info("📚 URLs importantes:")
+        logger.info("   • Documentação API: http://localhost:8000/docs")
+        logger.info("   • Interface Web: http://localhost:8501")
+        logger.info("   • Health Check: http://localhost:8000/health")
+        logger.info("\n🛑 Para parar o sistema: Ctrl+C")
+        logger.info("=" * 60)
+        
+        # 7. Aguardar interrupção
         try:
             while True:
                 time.sleep(1)
+                
+                # Verificar se os processos ainda estão rodando
+                if processo_api.poll() is not None:
+                    logger.error("❌ API parou inesperadamente")
+                    break
+                if processo_dashboard.poll() is not None:
+                    logger.error("❌ Dashboard parou inesperadamente")
+                    break
+                    
         except KeyboardInterrupt:
-            print("\n\n🛑 Parando serviços...")
-            print("✅ Sistema finalizado")
-            
-    else:
-        print("\n❌ ERRO AO INICIAR SISTEMA")
-        if not api_ok:
-            print("   - API não iniciou corretamente")
-        if not dashboard_ok:
-            print("   - Dashboard não iniciou corretamente")
+            logger.info("\n🛑 Parando sistema...")
+        
+        # 8. Parar processos
+        try:
+            processo_api.terminate()
+            processo_dashboard.terminate()
+            processo_api.wait(timeout=5)
+            processo_dashboard.wait(timeout=5)
+            logger.info("✅ Sistema finalizado com sucesso")
+        except:
+            processo_api.kill()
+            processo_dashboard.kill()
+            logger.info("🔪 Processos forçados a parar")
+        
+    except Exception as e:
+        logger.error(f"❌ Erro crítico: {e}")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
