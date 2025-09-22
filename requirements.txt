@@ -28,6 +28,7 @@ requests>=2.31.0
 beautifulsoup4>=4.12.2
 googlemaps>=4.10.0
 geopy>=2.4.1
+holidays>=0.34
 
 # Banco de Dados
 mysql-connector-python>=8.2.0

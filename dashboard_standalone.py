@@ -17,6 +17,8 @@ from datetime import datetime, date
 from typing import Dict, Optional
 import time
 import holidays
+import plotly.express as px
+import plotly.graph_objects as go
 
 def buscar_localizacao_api_publica(br: int, km: int):
     """Busca localização usando API pública Nominatim (OpenStreetMap)"""
@@ -289,6 +291,97 @@ def verificar_api():
     except:
         return False, {}
 
+def verificar_modelo_carregado():
+    """Verifica se API tem modelo ML carregado"""
+    try:
+        response = requests.get(f"{API_BASE_URL}/model/status", timeout=5)
+        if response.status_code == 200:
+            return True, response.json()
+        return False, {}
+    except:
+        return False, {}
+
+def validar_dados_entrada(dados):
+    """Valida se todos os campos necessários estão preenchidos"""
+    campos_obrigatorios = ['br', 'km', 'primeiro_relato', 'tipo_veiculo']
+    for campo in campos_obrigatorios:
+        if not dados.get(campo):
+            return False, f"Campo {campo} é obrigatório!"
+    return True, "Dados válidos"
+
+def exibir_resultado_ml(resultado):
+    """Exibe resultado com cores e métricas claras"""
+    if 'severidade_predita' not in resultado:
+        st.error("Resultado inválido - sem dados de severidade")
+        return
+    
+    severidade = resultado['severidade_predita']
+    
+    # Verificar se tem probabilidades reais do modelo
+    if 'probabilidades' in severidade:
+        probs = severidade['probabilidades']
+        
+        # Gráfico de barras com probabilidades
+        fig = px.bar(
+            x=list(probs.keys()),
+            y=list(probs.values()),
+            title="Distribuição de Probabilidades do Modelo ML",
+            color=list(probs.values()),
+            color_continuous_scale=['green', 'yellow', 'orange', 'red']
+        )
+        fig.update_layout(
+            xaxis_title="Severidade",
+            yaxis_title="Probabilidade",
+            showlegend=False,
+            height=300
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Métricas detalhadas
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Sem Feridos", f"{probs.get('sem_feridos', 0)*100:.1f}%")
+        with col2:
+            st.metric("Feridos Leves", f"{probs.get('feridos_leves', 0)*100:.1f}%")
+        with col3:
+            st.metric("Feridos Graves", f"{probs.get('feridos_graves', 0)*100:.1f}%")
+        with col4:
+            st.metric("Mortos", f"{probs.get('mortos', 0)*100:.1f}%")
+    else:
+        st.warning("Probabilidades detalhadas não disponíveis")
+
+def preencher_dados_automaticos():
+    """Preenche automaticamente todos os campos possíveis"""
+    dados_auto = {
+        "data_hora": datetime.now().isoformat(),
+        "eh_feriado": verificar_feriado(datetime.now().date()),
+        "eh_fim_semana": datetime.now().weekday() >= 5,
+        "clima": "bom",  # Será atualizado pela API
+        "trafego": "NORMAL",  # Será atualizado pela API
+        "fase_dia": calcular_fase_dia()
+    }
+    return dados_auto
+
+def calcular_fase_dia():
+    """Calcula fase do dia baseada na hora atual"""
+    hora = datetime.now().hour
+    if 5 <= hora < 12:
+        return "manhã"
+    elif 12 <= hora < 18:
+        return "tarde"
+    elif 18 <= hora < 22:
+        return "noite"
+    else:
+        return "madrugada"
+
+def verificar_feriado(data):
+    """Verifica se a data é feriado nacional"""
+    try:
+        br_holidays = holidays.Brazil()
+        return data in br_holidays
+    except:
+        return False
+
 def obter_dados_api(endpoint: str) -> Optional[Dict]:
     """Obtém dados da API"""
     try:
@@ -414,13 +507,27 @@ def main():
     
     # Verificar status da API
     api_ok, api_info = verificar_api()
+    modelo_ok, modelo_info = verificar_modelo_carregado()
+    
     if api_ok:
+        status_class = "api-status-online"
+        status_icon = "✅"
+        status_text = "API Online"
+        
+        if modelo_ok:
+            modelo_text = f"🤖 ML: {modelo_info.get('tipo_modelo', 'N/A')} ({modelo_info.get('acuracia', 'N/A')}%)"
+        else:
+            modelo_text = "⚠️ Modelo ML não carregado"
+            status_class = "api-status-offline"
+            status_icon = "⚠️"
+            status_text = "API Online (ML Offline)"
+        
         st.markdown(f"""
-        <div class="api-status-online">
-            <strong>✅ API Online</strong><br>
+        <div class="{status_class}">
+            <strong>{status_icon} {status_text}</strong><br>
             Uptime: {api_info.get('uptime', 'N/A')} | 
             Análises: {api_info.get('total_analises', 0)} | 
-            Status: {api_info.get('status', 'healthy')}
+            {modelo_text}
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -539,11 +646,19 @@ def main():
             
             # Botão de previsão
             if st.form_submit_button("🔮 PREVER SEVERIDADE", type="primary"):
-                if primeiro_relato:
+                # Validar dados de entrada
+                br_numero = br_selecionada.replace("BR-", "").replace("BR", "")
+                dados_validacao = {
+                    'br': br_numero,
+                    'km': km,
+                    'primeiro_relato': primeiro_relato,
+                    'tipo_veiculo': tipo_veiculo
+                }
+                
+                valido, mensagem = validar_dados_entrada(dados_validacao)
+                
+                if valido:
                     with st.spinner("Analisando severidade com ML..."):
-                        # Preparar payload com dados automáticos e contexto real
-                        br_numero = br_selecionada.replace("BR-", "").replace("BR", "")
-                        
                         # Buscar dados automáticos se não existirem
                         if not st.session_state.dados_automaticos:
                             dados_auto = buscar_dados_automaticos(br_selecionada, km)
@@ -562,7 +677,8 @@ def main():
                             "condicoes": {
                                 "temperatura": dados_auto['clima']['temperatura_atual'],
                                 "chuva": dados_auto['clima']['condicao_chuva'],
-                                "neblina": dados_auto['clima']['condicao_neblina']
+                                "neblina": dados_auto['clima']['condicao_neblina'],
+                                "clima_geral": dados_auto['clima'].get('clima_geral', 'bom')
                             },
                             "veiculos": [{"tipo": tipo_veiculo, "pessoas": pessoas}],
                             "infraestrutura": {
@@ -581,8 +697,10 @@ def main():
                             st.session_state.analises_realizadas.append(resultado)
                             st.success("✅ Previsão de severidade concluída!")
                             st.rerun()
+                        else:
+                            st.error("❌ Erro na previsão de severidade")
                 else:
-                    st.warning("⚠️ Preencha o primeiro relato")
+                    st.error(f"❌ {mensagem}")
     
     # ============================================================================
     # COLUNA 2: RESULTADOS
@@ -595,7 +713,7 @@ def main():
             
             # Severidade
             severidade = ultima_previsao["severidade_predita"]
-            confianca = ultima_previsao["confianca"]
+            confianca = ultima_previsao.get("confianca", severidade.get("confianca", 0))
             
             # Card de severidade com cores
             if severidade["nivel"] == "MORTOS":
@@ -618,6 +736,10 @@ def main():
                 st.markdown(f'<div class="metric-large">🟢 {severidade["nivel"]}</div>', unsafe_allow_html=True)
                 st.markdown(f'<div style="text-align: center; font-size: 1.2rem;">Confiança: {confianca:.1f}%</div>', unsafe_allow_html=True)
                 st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Exibir probabilidades reais do modelo ML
+            st.markdown("#### 📊 Probabilidades do Modelo ML")
+            exibir_resultado_ml(ultima_previsao)
             
             # Protocolo
             protocolo = ultima_previsao["protocolo_emergencia"]
